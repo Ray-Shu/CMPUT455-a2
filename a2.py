@@ -112,6 +112,7 @@ def parse_heap_number(args: str) -> Optional[int]:
 class HeapGo:
     def __init__(self, komi: float, heaps: Heaps) -> None:
         self.komi = komi
+        self.numerical_game_state = None
         self.heaps = heaps
         self.toplay = BLACK
         self.score = {BLACK: 0, WHITE: komi}
@@ -178,6 +179,17 @@ class CommandInterface:
 #============================================================================
 # Command implementations
 #============================================================================
+    def preprocess_game_state(self):
+        """
+        Preprocesses the game state so instead of tuples it uses a List[List[Ints]]. 
+        This makes it faster to run solving algorithms instead of having to parse through 
+        tuples and strings. 
+        """
+        self.game.numerical_game_state = [
+                [value if color == WHITE else -value for color, value in heap]
+                for heap in self.game.heaps
+            ] 
+
     def cmd_heapgo(self, args: str) -> bool:
         parts = args.split(maxsplit=1)
         if len(parts) != 2:
@@ -192,6 +204,8 @@ class CommandInterface:
             print_error("invalid game: {}".format(parts[1]))
             return False
         self.game = HeapGo(komi, heaps)
+
+        self.preprocess_game_state()
         return True
 
     def cmd_show(self, args: str) -> bool:
@@ -271,7 +285,7 @@ class CommandInterface:
 # You need to implement the following methods.
 #============================================================================
     def cmd_solve(self, args: str) -> bool:
-        
+
         return not_yet()
 
     def cmd_timelimit(self, args: str) -> bool:
