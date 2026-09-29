@@ -271,6 +271,7 @@ class CommandInterface:
 # You need to implement the following methods.
 #============================================================================
     def cmd_solve(self, args: str) -> bool:
+        
         return not_yet()
 
     def cmd_timelimit(self, args: str) -> bool:
