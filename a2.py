@@ -274,7 +274,16 @@ class CommandInterface:
         return not_yet()
 
     def cmd_timelimit(self, args: str) -> bool:
-        return not_yet()
+        try:
+            seconds = int(args)
+        except:
+            return False
+        
+        if (seconds < 1 or seconds > 100):
+            return False
+        else:
+            self.timelimit = seconds
+            return True
 #============================================================================
 # End of functions requiring implementation
 #============================================================================
