@@ -279,7 +279,7 @@ class CommandInterface:
         except:
             return False
         
-        if (seconds < 1 or seconds > 100):
+        if (seconds < MIN_TIMELIMIT or seconds > MAX_TIMELIMIT):
             return False
         else:
             self.timelimit = seconds
