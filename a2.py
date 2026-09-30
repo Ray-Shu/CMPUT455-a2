@@ -112,10 +112,11 @@ def parse_heap_number(args: str) -> Optional[int]:
 class HeapGo:
     def __init__(self, komi: float, heaps: Heaps) -> None:
         self.komi = komi
-        self.numerical_game_state = None
         self.heaps = heaps
         self.toplay = BLACK
         self.score = {BLACK: 0, WHITE: komi}
+
+        self.move_table = {}
 
     def __str__(self) -> str:
         return "k {} {}".format(self.komi, self.heaps)
@@ -179,16 +180,26 @@ class CommandInterface:
 #============================================================================
 # Command implementations
 #============================================================================
-    def preprocess_game_state(self):
+    def create_move_table(self):
         """
-        Preprocesses the game state so instead of tuples it uses a List[List[Ints]]. 
-        This makes it faster to run solving algorithms instead of having to parse through 
-        tuples and strings. 
-        """
-        self.game.numerical_game_state = [
-                [value if color == WHITE else -value for color, value in heap]
-                for heap in self.game.heaps
-            ] 
+        Creates a hash table that when given heap i, height h and player colour c, it saves the
+        points gained and the new height. 
+        """ 
+        self.game.move_table = []
+        for heap in self.game.heaps:
+            table = [None] * (len(heap) + 1)
+            for h in range(1, len(heap) + 1):
+                color, value = heap[h - 1]        # top token at this height
+                entry = {}
+                for c in (WHITE, BLACK):
+                    if c == color and h - 1 > 0:
+                        new_h, gain = table[h - 1][c]
+                        entry[c] = (new_h, gain + value)
+                    else:
+                        entry[c] = (h - 1, value)
+                table[h] = entry
+            self.game.move_table.append(table)
+
 
     def cmd_heapgo(self, args: str) -> bool:
         parts = args.split(maxsplit=1)
@@ -205,7 +216,8 @@ class CommandInterface:
             return False
         self.game = HeapGo(komi, heaps)
 
-        self.preprocess_game_state()
+        self.create_move_table()
+
         return True
 
     def cmd_show(self, args: str) -> bool:
