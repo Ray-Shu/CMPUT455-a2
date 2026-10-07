@@ -300,6 +300,18 @@ class CommandInterface:
 
         return not_yet()
 
+    def negamax_win(self, heights: Tuple[int, ...], toplay: str, score_diff: float) -> bool:
+        """True if the player to move (toplay) can force a win from this position."""
+        if not any(heights):
+            return score_diff > 0
+        for i, h in enumerate(heights):
+            if h == 0:
+                continue
+            height_after, points = self.game.move_table[i][h][to_play]
+            new_heights = heights[i:] + (heights_after,) + heights[i + 1:]
+
+
+
     def cmd_timelimit(self, args: str) -> bool:
         try:
             seconds = int(args)
