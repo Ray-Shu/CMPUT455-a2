@@ -296,9 +296,36 @@ class CommandInterface:
 #============================================================================
 # You need to implement the following methods.
 #============================================================================
-    def cmd_solve(self, args: str) -> bool:
+    def find_winning_move(self, heights, to_play, score_diff):
+        for i, h in enumerate(heights):
+            if h == 0:
+                continue
+            heights_after, points = self.game.move_table[i][h][to_play]
+            new_heights = heights[:i] + (heights_after,) + heights[i+1:]
+            next_to_play = opponent(to_play)
+            next_score_diff = -(points + score_diff)  # negate to flip to opponent's view
+            if not self.negamax_win(new_heights, next_to_play, next_score_diff):
+                return i
+        return None
+            
 
-        return not_yet()
+    def cmd_solve(self, args: str) -> bool:
+        if self.game is None:
+            print_error("no game started")
+            return False
+        if self.game.game_over():
+            print(self.game.winner())
+            return True
+        g = self.game
+        heights = tuple(len(heap) for heap in g.heaps)
+        to_play = g.toplay
+        score_diff = g.score[to_play] - g.score[opponent(to_play)]
+        move = self.find_winning_move(heights, to_play, score_diff)
+        if move is None:
+            print(opponent(to_play))
+        else:
+            print(to_play, move)
+        return True
 
     def negamax_win(self, heights: Tuple[int, ...], to_play: str, score_diff: float) -> bool:
         """True if the player to move (to_play) can force a win from this position."""
@@ -308,7 +335,7 @@ class CommandInterface:
             if h == 0:
                 continue
             heights_after, points = self.game.move_table[i][h][to_play]
-            new_heights = heights[:i] + (heights_after,) + heights[i + 1:]
+            new_heights = heights[:i] + (heights_after,) + heights[i+1:]
             next_to_play = opponent(to_play)
             next_score_diff = -(points + score_diff)  # negate to flip to opponent's view
             if not self.negamax_win(new_heights, next_to_play, next_score_diff):
