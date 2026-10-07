@@ -300,16 +300,20 @@ class CommandInterface:
 
         return not_yet()
 
-    def negamax_win(self, heights: Tuple[int, ...], toplay: str, score_diff: float) -> bool:
-        """True if the player to move (toplay) can force a win from this position."""
-        if not any(heights):
+    def negamax_win(self, heights: Tuple[int, ...], to_play: str, score_diff: float) -> bool:
+        """True if the player to move (to_play) can force a win from this position."""
+        if not any(heights):  # no moves left, we reach terminal state
             return score_diff > 0
         for i, h in enumerate(heights):
             if h == 0:
                 continue
-            height_after, points = self.game.move_table[i][h][to_play]
-            new_heights = heights[i:] + (heights_after,) + heights[i + 1:]
-
+            heights_after, points = self.game.move_table[i][h][to_play]
+            new_heights = heights[:i] + (heights_after,) + heights[i + 1:]
+            next_to_play = opponent(to_play)
+            next_score_diff = -(points + score_diff)  # negate to flip to opponent's view
+            if not self.negamax_win(new_heights, next_to_play, next_score_diff):
+                return True
+        return False
 
 
     def cmd_timelimit(self, args: str) -> bool:
