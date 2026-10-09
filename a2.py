@@ -5,6 +5,7 @@
 
 import ast
 import random
+import time
 from sys import stderr
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -115,8 +116,6 @@ class HeapGo:
         self.heaps = heaps
         self.toplay = BLACK
         self.score = {BLACK: 0, WHITE: komi}
-
-        self.move_table = {}
 
     def __str__(self) -> str:
         return "k {} {}".format(self.komi, self.heaps)
@@ -297,8 +296,79 @@ class CommandInterface:
 # You need to implement the following methods.
 #============================================================================
     def cmd_solve(self, args: str) -> bool:
+        """
+        Negamax implementation with transposition table. 
+        The transposition table is indexed by (tuple(heights), colour). 
+        """
+        if self.game is None:
+            print_error("no game started")
+            return False
+        game = self.game
+        if game.game_over():
+            print(game.winner())
+            return True
 
-        return not_yet()
+        # A state can be characterized by the curr heights of the heaps
+        heights = [len(heap) for heap in game.heaps]
+        move_table = game.move_table
+        tt = {}
+        start = time.time()
+
+        def negamax(color: str) -> int:
+            # Uses a transposition table to check if an existing optimal play already exists
+            key = (tuple(heights), color)
+            result = tt.get(key)
+            if result is not None:
+                return result
+            
+            if time.time() - start > self.timelimit:
+                raise TimeoutError
+
+            # Iterates over all heaps to find the most optimal play,
+            # and uses the move table instead of running heap calculations. 
+            other = opponent(color)
+            best = float("-inf") 
+            for i in range(len(heights)):
+                h = heights[i]
+                if h == 0:
+                    continue
+                new_h, gain = move_table[i][h][color]
+                heights[i] = new_h
+                value = gain - negamax(other)
+                heights[i] = h
+                if value > best:
+                    best = value
+            if best == float("-inf"):  # no legal moves
+                best = 0
+            tt[key] = best
+            return best
+
+        player = game.toplay
+        other = opponent(player)
+        # Accounts for komi and if play was done prior to solve
+        margin = game.score[player] - game.score[other] 
+        winning_move = None
+        try:
+            for i in range(len(heights)):
+                h = heights[i]
+                if h == 0:
+                    continue
+                new_h, gain = move_table[i][h][player]
+                heights[i] = new_h
+                value = gain - negamax(other)
+                heights[i] = h
+                if margin + value > 0:
+                    winning_move = i
+                    break
+        except TimeoutError:
+            print_error("cmd_solve timed out")
+            return False
+
+        if winning_move is None:
+            print(other)
+        else:
+            print("{} {}".format(player, winning_move))
+        return True
 
     def cmd_timelimit(self, args: str) -> bool:
         try:
