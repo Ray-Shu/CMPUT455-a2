@@ -1,0 +1,121 @@
+HeapGo solver notes
+===================
+
+1. Where things started
+-----------------------
+- preprocess_game_state() turns self.game.heaps into signed ints
+  (white = +value, black = -value) and stores the result in
+  numerical_game_state. It only runs inside cmd_heapgo.
+- test_preprocess.py has 16 unit tests for it. 15 pass. One is marked
+  @expectedFailure: after play()/genmove, heaps changes but
+  numerical_game_state does not, so the two go out of sync.
+
+
+2. Does signed-int preprocessing speed up the solver?
+-----------------------------------------------------
+Not by itself. A quick benchmark (one move plus its undo, 20x20 board):
+    tuples            ~406 ns/move
+    signed ints       ~424 ns/move
+    precomputed table ~198 ns/move (includes ~150 ns of benchmark overhead)
+In Python, checking a string color costs about the same as checking an
+int's sign. The time goes to interpreter overhead (loops, pop, undo), not
+to the comparison.
+
+Preprocessing is still the right idea, just a different kind (section 4).
+
+
+3. Key observation: what a position really is
+---------------------------------------------
+Tokens are only ever taken from the top of a heap and never added back.
+So the whole position is just:
+    - the current height of each heap, and
+    - whose turn it is.
+The tokens below each height never change.
+
+The solver should keep this lightweight state (a list of heights) and
+play/undo moves on it directly. It should NOT call HeapGo.play(). That
+also removes the sync problem: cmd_solve reads the current heights from
+len(heap) for each heap in self.game.heaps and starts from there.
+
+
+4. Move table (built once, when heapgo runs)
+--------------------------------------------
+Purpose: make playing a move fast. It does NOT choose the best move.
+
+A move on heap i only depends on heap i. So for each
+(heap, height, color) the result is always the same:
+    (new height, points gained)
+Size is at most 20 heaps x 20 heights x 2 colors = 800 entries, which
+is small and easy to precompute.
+
+Worked example, one heap listed bottom to top:
+[('b',3), ('w',5), ('b',2), ('b',4)]
+
+    height | black moves      | white moves
+    -------+------------------+--------------------
+      4    | (1, 11)          | (3, 4)
+      3    | (1, 7)           | (2, 2)
+      2    | (1, 5)           | (0, 8)
+      1    | (0, 3)           | (0, 3)
+      0    | illegal          | illegal
+
+In the solver, "play a move" becomes: look up the entry, set that
+heap's height to the new height, and later set it back to undo.
+No loop over tokens and no pop/push.
+
+
+5. Negamax search
+-----------------
+- negamax(heights, color) returns the best SCORE DIFFERENCE the player
+  to move can still get from here: my future points minus the
+  opponent's future points.
+- For each non-empty heap: look up the move, apply it,
+  value = gain - negamax(child, opponent), then undo it.
+  Keep the max over all moves.
+- No legal moves left: return 0 (nothing more to gain).
+- Minimax still tries every legal move. The move table only makes each
+  try cheaper.
+
+
+6. Transposition table (filled during search)
+---------------------------------------------
+- A dictionary keyed by (tuple(heights), color) that stores the negamax
+  value.
+- It starts EMPTY and only holds positions the search actually reaches.
+  You never list every possible state (that could be ~21^20).
+- Why it helps: different move orders often reach the same position
+  (heap 0 then heap 3 = heap 3 then heap 0). The cache means each
+  position is solved only once.
+- It's safe to cache because the value is the FUTURE score difference,
+  which doesn't depend on points already scored.
+
+
+7. Turning the negamax value into a solve answer
+------------------------------------------------
+- The player to move, p, wins exactly when
+      score[p] + negamax(...) > score[opponent]
+  (White's score starts at komi.)
+- At the start of a game (Black 0, White komi) this becomes:
+      Black to play: Black wins iff value > komi
+      White to play: White wins iff value > -komi
+  After moves have been played, use the current scores, not just komi.
+- Winning move: at the top level only, go through the moves and report
+  the first one whose value makes the player to move win.
+
+
+8. Further speedups to consider
+-------------------------------
+- Alpha-beta pruning on top of negamax.
+- Move ordering: try moves with larger gains first so alpha-beta prunes
+  more.
+- Respect the time limit: stop and report failure (= -1) if solve runs
+  out of time.
+
+
+9. What to do with the existing code and tests
+----------------------------------------------
+- numerical_game_state / preprocess_game_state can be replaced by the
+  move table.
+- Update the tests to check the move table against hand-worked
+  examples (like the one in section 4), instead of checking the signed
+  ints.
