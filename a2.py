@@ -268,8 +268,39 @@ class CommandInterface:
         if not moves:
             print_error("no legal moves")
             return False
-        # you need to replace this random move by a move from your solver
+
+        start = time.time() # begins timer
+        heights = [len(heap) for heap in self.game.heaps] # tracks how many tokens are in each heap
+        move_table = self.game.move_table # precomputed table of moves for each heap, height and player
+
+        # transposition table to store previously computed results
+        tt ={}
+
+        # calculates the score difference
+        player = self.game.toplay
+        other = opponent(player)
+        margin = self.game.score[player] - self.game.score[other]
+
+        # fall back move if we cannot find a winning move
         move = random.choice(moves)
+        try:
+            for i in moves:
+                h = heights[i]
+                new_h, gain = move_table[i][h][player]
+                heights[i] = new_h
+
+                try:
+                    value = gain - self.negamax(other, heights, move_table, tt, start) # evaluate move based on opponent's best move
+                finally:
+                    heights[i] = h
+
+                if margin + value > 0: # check if it is a winning move and play this move instead of the random fallback move
+                    move = i
+                    break
+        except TimeoutError:
+            # use random fall back move
+            pass   
+
         self.game.play(move)
         print(move)
         return True
@@ -291,6 +322,35 @@ class CommandInterface:
             return False
         print(winner)
         return True
+
+    def negamax(self, color, heights, move_table, tt, start) -> int:
+                # Uses a transposition table to check if an existing optimal play already exists
+                key = (tuple(heights), color)
+                result = tt.get(key)
+                if result is not None:
+                    return result
+                
+                if time.time() - start > self.timelimit:
+                    raise TimeoutError
+    
+                # Iterates over all heaps to find the most optimal play,
+                # and uses the move table instead of running heap calculations. 
+                other = opponent(color)
+                best = float("-inf") 
+                for i in range(len(heights)):
+                    h = heights[i]
+                    if h == 0:
+                        continue
+                    new_h, gain = move_table[i][h][color]
+                    heights[i] = new_h
+                    value = gain - self.negamax(other, heights, move_table, tt, start)
+                    heights[i] = h
+                    if value > best:
+                        best = value
+                if best == float("-inf"):  # no legal moves
+                    best = 0
+                tt[key] = best
+                return best
 
 #============================================================================
 # You need to implement the following methods.
@@ -314,35 +374,6 @@ class CommandInterface:
         tt = {}
         start = time.time()
 
-        def negamax(color: str) -> int:
-            # Uses a transposition table to check if an existing optimal play already exists
-            key = (tuple(heights), color)
-            result = tt.get(key)
-            if result is not None:
-                return result
-            
-            if time.time() - start > self.timelimit:
-                raise TimeoutError
-
-            # Iterates over all heaps to find the most optimal play,
-            # and uses the move table instead of running heap calculations. 
-            other = opponent(color)
-            best = float("-inf") 
-            for i in range(len(heights)):
-                h = heights[i]
-                if h == 0:
-                    continue
-                new_h, gain = move_table[i][h][color]
-                heights[i] = new_h
-                value = gain - negamax(other)
-                heights[i] = h
-                if value > best:
-                    best = value
-            if best == float("-inf"):  # no legal moves
-                best = 0
-            tt[key] = best
-            return best
-
         player = game.toplay
         other = opponent(player)
         # Accounts for komi and if play was done prior to solve
@@ -355,7 +386,7 @@ class CommandInterface:
                     continue
                 new_h, gain = move_table[i][h][player]
                 heights[i] = new_h
-                value = gain - negamax(other)
+                value = gain - self.negamax(other, heights, move_table, tt, start)
                 heights[i] = h
                 if margin + value > 0:
                     winning_move = i
