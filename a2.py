@@ -161,7 +161,10 @@ class CommandInterface:
     def __init__(self) -> None:
         self.game: Optional[HeapGo] = None
         self.timelimit = DEFAULT_TIMELIMIT
-        # you can add your own initialisation here
+        # Solver state, reset at the start of every search
+        self.heights: List[int] = []
+        self.tt: Dict[Tuple[Tuple[int, ...], str], Tuple[float, float]] = {}
+        self.deadline = 0.0
         self.commands: CommandMap = {
             "help": self.cmd_help,
             "heapgo": self.cmd_heapgo,
@@ -182,8 +185,8 @@ class CommandInterface:
     def create_move_table(self):
         """
         Creates a hash table that when given heap i, height h and player colour c, it saves the
-        points gained and the new height. 
-        """ 
+        points gained and the new height.
+        """
         self.game.move_table = []
         for heap in self.game.heaps:
             table = [None] * (len(heap) + 1)
@@ -268,8 +271,13 @@ class CommandInterface:
         if not moves:
             print_error("no legal moves")
             return False
-        # you need to replace this random move by a move from your solver
-        move = random.choice(moves)
+        # Play the solver's winning move; if losing or out of time, any legal move
+        try:
+            move = self.find_winning_move()
+        except TimeoutError:
+            move = None
+        if move is None:
+            move = random.choice(moves)
         self.game.play(move)
         print(move)
         return True
@@ -295,18 +303,14 @@ class CommandInterface:
 #============================================================================
 # You need to implement the following methods.
 #============================================================================
-    def cmd_solve(self, args: str) -> bool:
+    def find_winning_move(self) -> Optional[int]:
         """
-        Negamax implementation with transposition table. 
-        The transposition table is indexed by (tuple(heights), colour). 
+        Negamax implementation with transposition table.
+        The transposition table is indexed by (tuple(heights), colour).
+        Returns a winning heap index for the player to play, or None if
+        every move loses. Raises TimeoutError if the time limit runs out.
         """
-        if self.game is None:
-            print_error("no game started")
-            return False
         game = self.game
-        if game.game_over():
-            print(game.winner())
-            return True
 
         # A state can be characterized by the curr heights of the heaps
         heights = [len(heap) for heap in game.heaps]
@@ -320,14 +324,14 @@ class CommandInterface:
             result = tt.get(key)
             if result is not None:
                 return result
-            
+
             if time.time() - start > self.timelimit:
                 raise TimeoutError
 
             # Iterates over all heaps to find the most optimal play,
-            # and uses the move table instead of running heap calculations. 
+            # and uses the move table instead of running heap calculations.
             other = opponent(color)
-            best = float("-inf") 
+            best = float("-inf")
             for i in range(len(heights)):
                 h = heights[i]
                 if h == 0:
@@ -346,24 +350,36 @@ class CommandInterface:
         player = game.toplay
         other = opponent(player)
         # Accounts for komi and if play was done prior to solve
-        margin = game.score[player] - game.score[other] 
-        winning_move = None
+        margin = game.score[player] - game.score[other]
+        for i in range(len(heights)):
+            h = heights[i]
+            if h == 0:
+                continue
+            new_h, gain = move_table[i][h][player]
+            heights[i] = new_h
+            value = gain - negamax(other)
+            heights[i] = h
+            if margin + value > 0:
+                return i
+        return None
+
+    def cmd_solve(self, args: str) -> bool:
+        if self.game is None:
+            print_error("no game started")
+            return False
+        game = self.game
+        if game.game_over():
+            print(game.winner())
+            return True
+
         try:
-            for i in range(len(heights)):
-                h = heights[i]
-                if h == 0:
-                    continue
-                new_h, gain = move_table[i][h][player]
-                heights[i] = new_h
-                value = gain - negamax(other)
-                heights[i] = h
-                if margin + value > 0:
-                    winning_move = i
-                    break
+            winning_move = self.find_winning_move()
         except TimeoutError:
             print_error("cmd_solve timed out")
             return False
 
+        player = game.toplay
+        other = opponent(player)
         if winning_move is None:
             print(other)
         else:
@@ -375,7 +391,7 @@ class CommandInterface:
             seconds = int(args)
         except:
             return False
-        
+
         if (seconds < MIN_TIMELIMIT or seconds > MAX_TIMELIMIT):
             return False
         else:
